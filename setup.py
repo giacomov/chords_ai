@@ -20,6 +20,8 @@ setup(
             'matplotlib',
             'keras',
             'scikit-learn',
-            'ipython'
+            'ipython',
+            'audiolazy',
+            'fluidsynth'
         ]
 )
