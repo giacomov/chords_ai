@@ -1,1 +1,1 @@
-from chords_ai.chords_generator import ChordsAI
+from chords_generator import ChordsAI
