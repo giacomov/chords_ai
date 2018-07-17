@@ -4,6 +4,7 @@ Generate chords based on the LSTM model
 
 from chords_ai.package_data import get_path_of_data_file
 from chords_ai.custom_metric import sparse_top_k_categorical_accuracy_3
+from chords_ai.player import ChordSequencePlayer
 
 import os
 from keras import models
@@ -84,7 +85,25 @@ class ChordsAI(object):
         """
         return self._seq_length
 
-    def generate_seq(self, seed_chord_sequence, n_chords_to_generate):
+    def generate_random_sequence(self, n_chords_to_generate, play=False):
+
+        # Get n_chords_to_generate random integers between 0 and the length of the vocabulary
+        idx = np.random.randint(0, len(self._vocabulary), n_chords_to_generate)
+
+        final_sequence = " ".join(map(lambda x:self._inverse_mapping[x], idx))
+
+        if play:
+
+            audio = ChordSequencePlayer().play(final_sequence)
+
+        else:
+
+            audio = None
+
+        # Return the corresponding chords
+        return final_sequence, audio
+
+    def generate_seq(self, seed_chord_sequence, n_chords_to_generate, probabilistic=True, play=False):
 
         # Split input sequence into a list
         chord_sequence = seed_chord_sequence.split()
@@ -96,7 +115,7 @@ class ChordsAI(object):
         for _ in range(n_chords_to_generate):
 
             # encode the characters as integers
-            encoded = [self._mapping[char] for char in chord_sequence]
+            encoded = [self._mapping[ch] for ch in chord_sequence]
 
             # truncate sequence to the last "seq_length" chords
             pad_encoded = pad_sequences([encoded], maxlen=self.length_of_sequences, truncating='pre')
@@ -105,60 +124,39 @@ class ChordsAI(object):
             # Remember: this is a vector of probabilities (one probability for each element of the vocabulary)
             preds = self._model.predict(pad_encoded, verbose=0)[0]
 
-            # Pick one chord randomly, according to the probabilities
-            yhat = np.random.choice(range(len(self.vocabulary)),
-                                    p=preds)
+            if probabilistic:
+
+                # Pick one chord randomly, according to the probabilities
+                yhat = np.random.choice(range(len(self.vocabulary)),
+                                        p=preds)
+
+            else:
+
+                # Just get the most probable
+                yhat = preds.argmax()
 
             # reverse map integer to character
-            out_char = ''
-            for char, index in self._mapping.items():
-                if index == yhat:
-                    out_char = char
-                    break
-
-            assert self._inverse_mapping[yhat] == out_char
+            out_char = self._inverse_mapping[yhat]
 
             # append to input so that in the next iteration the memory of the previous chords
             # will be passed to the network
             chord_sequence.append(out_char)
 
+        # Generate sequence with generated chords and input sequence (i.e., the "song")
+        complete_sequence_str = " ".join(chord_sequence)
+
+        if play:
+
+            # We generate a player for this sequence
+            p = ChordSequencePlayer()
+            audio = p.play(complete_sequence_str)
+
+        else:
+
+            audio = None
+
         # Return the output sequence, which has been appended into in_sequence after the input,
         # and join the result in a space-separated string
 
-        return " ".join(chord_sequence[self.length_of_sequences:])
+        return complete_sequence_str, audio
 
-    def generate_seq2(self, seed_text, n_chars):
-
-        model = self._model
-        mapping = self._mapping
-        seq_length = self._seq_length
-
-        in_text = seed_text.split()
-
-        assert len(in_text) == seq_length
-
-        # generate a fixed number of characters
-        for _ in range(n_chars):
-            # encode the characters as integers
-            encoded = [mapping[char] for char in in_text]
-            # truncate sequences to a fixed length
-            encoded = pad_sequences([encoded], maxlen=seq_length, truncating='pre')
-
-            # predict character according to probability
-
-            preds = model.predict(encoded, verbose=0)[0]
-
-            yhat = np.random.choice(range(len(mapping)),
-                                    p=preds)
-
-            # reverse map integer to character
-            out_char = ''
-            for char, index in mapping.items():
-                if index == yhat:
-                    out_char = char
-                    break
-            
-            # append to input
-            in_text.append(out_char)
-
-        return " ".join(in_text[seq_length:])
